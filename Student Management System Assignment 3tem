@@ -1,0 +1,281 @@
+import java.util.*;
+import java.util.concurrent.*;
+
+
+class Student {
+    private Integer rollNo;    
+    private String name;
+    private String email;
+    private String course;
+    private Double marks;       
+
+    public Student(Integer rollNo, String name, String email, String course, Double marks) {
+        this.rollNo = rollNo;
+        this.name = name;
+        this.email = email;
+        this.course = course;
+        this.marks = marks;
+    }
+
+    public Integer getRollNo() { return rollNo; }
+    public String getName() { return name; }
+    public String getEmail() { return email; }
+    public String getCourse() { return course; }
+    public Double getMarks() { return marks; }
+
+    public void setCourse(String course) { this.course = course; }
+    public void setMarks(Double marks) { this.marks = marks; }
+
+    public char getGrade() {
+        double m = marks.doubleValue();
+        if (m >= 90) return 'A';
+        if (m >= 75) return 'B';
+        if (m >= 50) return 'C';
+        return 'D';
+    }
+
+    public void display() {
+        System.out.println("Roll No : " + rollNo);
+        System.out.println("Name    : " + name);
+        System.out.println("Email   : " + email);
+        System.out.println("Course  : " + course);
+        System.out.println("Marks   : " + marks);
+        System.out.println("Grade   : " + getGrade());
+        System.out.println("---------------------------------");
+    }
+}
+
+/* Custom exceptions */
+class InvalidMarksException extends Exception {
+    public InvalidMarksException(String msg) { super(msg); }
+}
+
+class StudentNotFoundException extends Exception {
+    public StudentNotFoundException(String msg) { super(msg); }
+}
+
+/* Loader Runnable used to simulate loading (multithreading) */
+class Loader implements Runnable {
+    private final String taskName;
+    private final int millis; // total duration in ms
+
+    public Loader(String taskName, int millis) {
+        this.taskName = taskName;
+        this.millis = millis;
+    }
+
+    @Override
+    public void run() {
+        try {
+            int steps = 5;
+            int stepTime = millis / steps;
+            System.out.print(taskName + " ");
+            for (int i = 0; i < steps; i++) {
+                System.out.print(".");
+                Thread.sleep(stepTime);
+            }
+            System.out.println(" Done");
+        } catch (InterruptedException e) {
+            System.out.println("\n" + taskName + " interrupted.");
+            Thread.currentThread().interrupt();
+        }
+    }
+}
+
+/* Interface for actions */
+interface RecordActions {
+    void addStudent() throws InvalidMarksException;
+    void deleteStudent(Integer roll) throws StudentNotFoundException;
+    void updateStudent(Integer roll) throws StudentNotFoundException, InvalidMarksException;
+    void viewStudent(Integer roll) throws StudentNotFoundException;
+    void viewAll();
+}
+
+/* StudentManager implements RecordActions and demonstrates exception handling */
+class StudentManager implements RecordActions {
+    private final Map<Integer, Student> store = new HashMap<>();
+    private final Scanner sc;
+
+    public StudentManager(Scanner sc) {
+        this.sc = sc;
+    }
+
+    /* Validate marks: 0 - 100 */
+    private void validateMarks(Double marks) throws InvalidMarksException {
+        if (marks == null || marks < 0 || marks > 100) {
+            throw new InvalidMarksException("Invalid marks: " + marks + ". Marks must be in 0-100.");
+        }
+    }
+
+    @Override
+    public void addStudent() throws InvalidMarksException {
+        try {
+            System.out.print("Enter Roll No (Integer): ");
+            Integer roll = Integer.valueOf(sc.nextLine().trim()); // wrapper usage
+            if (store.containsKey(roll)) {
+                System.out.println("Student with roll " + roll + " already exists. Aborting add.");
+                return;
+            }
+
+            System.out.print("Enter Name: ");
+            String name = sc.nextLine().trim();
+
+            System.out.print("Enter Email: ");
+            String email = sc.nextLine().trim();
+
+            System.out.print("Enter Course: ");
+            String course = sc.nextLine().trim();
+
+            System.out.print("Enter Marks (Double): ");
+            Double marks = Double.valueOf(sc.nextLine().trim()); // wrapper usage
+
+            validateMarks(marks); // may throw InvalidMarksException
+
+            // simulate loading in background while saving
+            Thread loader = new Thread(new Loader("Saving student", 700));
+            loader.start();
+
+            // emulating some processing time
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException ignored) {}
+
+            // autoboxing demonstration: adding Double to collection (already wrapper)
+            Student s = new Student(roll, name, email, course, marks);
+            store.put(roll.intValue(), s);
+
+            // wait for loader to finish
+            try { loader.join(); } catch (InterruptedException ignored) {}
+
+            System.out.println("Student added successfully.");
+        } catch (NumberFormatException nfe) {
+            System.out.println("Input format error: please enter numeric values correctly.");
+        }
+    }
+
+    @Override
+    public void deleteStudent(Integer roll) throws StudentNotFoundException {
+        Student removed = store.remove(roll);
+        if (removed == null) throw new StudentNotFoundException("Student with roll " + roll + " not found.");
+        System.out.println("Student deleted successfully.");
+    }
+
+    @Override
+    public void updateStudent(Integer roll) throws StudentNotFoundException, InvalidMarksException {
+        Student s = store.get(roll);
+        if (s == null) throw new StudentNotFoundException("Student with roll " + roll + " not found.");
+
+        try {
+            System.out.print("Enter new Course (leave blank to keep): ");
+            String course = sc.nextLine().trim();
+            if (!course.isEmpty()) s.setCourse(course);
+
+            System.out.print("Enter new Marks (leave blank to keep): ");
+            String marksStr = sc.nextLine().trim();
+            if (!marksStr.isEmpty()) {
+                Double marks = Double.valueOf(marksStr);
+                validateMarks(marks); // may throw
+                s.setMarks(marks);    // autoboxing/assignment
+            }
+
+            // show loader while updating
+            ExecutorService ex = Executors.newSingleThreadExecutor();
+            Future<?> f = ex.submit(new Loader("Updating record", 500));
+            try { f.get(); } catch (Exception ignored) {}
+            ex.shutdown();
+
+            System.out.println("Student updated successfully.");
+        } catch (NumberFormatException nfe) {
+            System.out.println("Marks must be a number.");
+        }
+    }
+
+    @Override
+    public void viewStudent(Integer roll) throws StudentNotFoundException {
+        Student s = store.get(roll);
+        if (s == null) throw new StudentNotFoundException("Student with roll " + roll + " not found.");
+        s.display();
+    }
+
+    @Override
+    public void viewAll() {
+        if (store.isEmpty()) {
+            System.out.println("No student records.");
+            return;
+        }
+        for (Student s : store.values()) s.display();
+    }
+}
+
+/* Main application with menu and try-catch-finally usage */
+public class StudentManagementApp {
+    public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
+        StudentManager manager = new StudentManager(sc);
+
+        try {
+            while (true) {
+                System.out.println("\n===== Student Management System =====");
+                System.out.println("1. Add Student");
+                System.out.println("2. View Student");
+                System.out.println("3. Update Student");
+                System.out.println("4. Delete Student");
+                System.out.println("5. View All Students");
+                System.out.println("6. Exit");
+                System.out.print("Enter choice: ");
+
+                String choice = sc.nextLine().trim();
+                switch (choice) {
+                    case "1" -> {
+                        try {
+                            manager.addStudent();
+                        } catch (InvalidMarksException ime) {
+                            System.out.println("Error: " + ime.getMessage());
+                        }
+                    }
+                    case "2" -> {
+                        try {
+                            System.out.print("Enter Roll No to view: ");
+                            Integer roll = Integer.valueOf(sc.nextLine().trim());
+                            manager.viewStudent(roll);
+                        } catch (StudentNotFoundException snf) {
+                            System.out.println("Error: " + snf.getMessage());
+                        } catch (NumberFormatException nfe) {
+                            System.out.println("Enter a valid integer roll number.");
+                        }
+                    }
+                    case "3" -> {
+                        try {
+                            System.out.print("Enter Roll No to update: ");
+                            Integer roll = Integer.valueOf(sc.nextLine().trim());
+                            manager.updateStudent(roll);
+                        } catch (StudentNotFoundException | InvalidMarksException e) {
+                            System.out.println("Error: " + e.getMessage());
+                        }
+                    }
+                    case "4" -> {
+                        try {
+                            System.out.print("Enter Roll No to delete: ");
+                            Integer roll = Integer.valueOf(sc.nextLine().trim());
+                            manager.deleteStudent(roll);
+                        } catch (StudentNotFoundException snf) {
+                            System.out.println("Error: " + snf.getMessage());
+                        } catch (NumberFormatException nfe) {
+                            System.out.println("Enter a valid integer roll number.");
+                        }
+                    }
+                    case "5" -> manager.viewAll();
+                    case "6" -> {
+                        System.out.println("Exiting program. Goodbye!");
+                        return;
+                    }
+                    default -> System.out.println("Invalid choice. Try again.");
+                }
+            }
+        } finally {
+            // finally clause ensures resource release
+            sc.close();
+            System.out.println("Scanner closed. Program terminated.");
+        }
+    }
+}
