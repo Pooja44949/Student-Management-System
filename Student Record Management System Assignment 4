@@ -1,0 +1,317 @@
+import java.io.*;
+import java.util.*;
+
+public class StudentRecordManagement {
+
+    // Path to persistent file
+    private static final String DATA_FILE = "students.txt";
+
+    /* ---------- Model ---------- */
+    static class Student {
+        int rollNo;
+        String name;
+        String email;
+        String course;
+        double marks;
+
+        Student(int rollNo, String name, String email, String course, double marks) {
+            this.rollNo = rollNo;
+            this.name = name;
+            this.email = email;
+            this.course = course;
+            this.marks = marks;
+        }
+
+        @Override
+        public String toString() {
+            return rollNo + "|" + escape(name) + "|" + escape(email) + "|" + escape(course) + "|" + marks;
+        }
+
+        // Display pretty
+        public void display() {
+            System.out.println("Roll No: " + rollNo);
+            System.out.println("Name   : " + name);
+            System.out.println("Email  : " + email);
+            System.out.println("Course : " + course);
+            System.out.println("Marks  : " + marks);
+            System.out.println();
+        }
+
+        private static String escape(String s) {
+            return s.replace("|", "/|"); // simple escaping
+        }
+
+        static Student parse(String line) {
+            // split with -1 to preserve empty fields
+            String[] parts = line.split("\\|", -1);
+            if (parts.length < 5) return null;
+            try {
+                int r = Integer.parseInt(parts[0].trim());
+                String n = parts[1].replace("/|", "|");
+                String e = parts[2].replace("/|", "|");
+                String c = parts[3].replace("/|", "|");
+                double m = Double.parseDouble(parts[4].trim());
+                return new Student(r, n, e, c, m);
+            } catch (Exception ex) {
+                return null;
+            }
+        }
+    }
+
+    /* ---------- File utilities ---------- */
+    static class FileUtil {
+
+        // Load all students from file into list
+        static List<Student> loadStudents(String path) {
+            List<Student> list = new ArrayList<>();
+            File f = new File(path);
+            if (!f.exists()) return list;
+
+            try (BufferedReader br = new BufferedReader(new FileReader(f))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    if (line.trim().isEmpty()) continue;
+                    Student s = Student.parse(line);
+                    if (s != null) list.add(s);
+                }
+            } catch (IOException e) {
+                System.out.println("Error reading file: " + e.getMessage());
+            }
+            return list;
+        }
+
+        // Save all students to file (overwrite)
+        static void saveStudents(String path, List<Student> students) {
+            try (BufferedWriter bw = new BufferedWriter(new FileWriter(path))) {
+                for (Student s : students) {
+                    bw.write(s.toString());
+                    bw.newLine();
+                }
+            } catch (IOException e) {
+                System.out.println("Error saving file: " + e.getMessage());
+            }
+        }
+
+        // Show file attributes (size, lastModified, readable)
+        static void showFileAttributes(String path) {
+            File f = new File(path);
+            System.out.println("File: " + f.getName());
+            System.out.println("Exists: " + f.exists());
+            if (f.exists()) {
+                System.out.println("Readable: " + f.canRead());
+                System.out.println("Writable: " + f.canWrite());
+                System.out.println("Length (bytes): " + f.length());
+                System.out.println("Last Modified: " + new Date(f.lastModified()));
+            }
+            System.out.println();
+        }
+
+        // RandomAccessFile demo: read the nth line by scanning bytes (simple approach)
+        static String readLineAtPosition(String path, long pos) {
+            try (RandomAccessFile raf = new RandomAccessFile(path, "r")) {
+                if (pos < 0 || pos >= raf.length()) return null;
+                raf.seek(pos);
+                return raf.readLine(); // reads bytes and returns a String (platform default encoding)
+            } catch (IOException e) {
+                return null;
+            }
+        }
+
+        // Get approximate byte offset of a given line number (0-based) - naive scan
+        static long offsetOfLine(String path, int lineNumber) {
+            long offset = 0;
+            int current = 0;
+            try (BufferedReader br = new BufferedReader(new FileReader(path))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    if (current == lineNumber) return offset;
+                    offset += line.getBytes().length + System.lineSeparator().getBytes().length;
+                    current++;
+                }
+            } catch (IOException e) {
+                return -1;
+            }
+            return -1;
+        }
+    }
+
+    /* ---------- Manager ---------- */
+    static class StudentManager {
+        List<Student> students = new ArrayList<>();
+        Map<Integer, Student> map = new HashMap<>();
+
+        StudentManager(List<Student> initial) {
+            if (initial != null) {
+                for (Student s : initial) addStudentToCollections(s);
+            }
+        }
+
+        private void addStudentToCollections(Student s) {
+            students.add(s);
+            map.put(s.rollNo, s);
+        }
+
+        boolean addStudent(Student s) {
+            if (map.containsKey(s.rollNo)) {
+                return false; // duplicate rollNo
+            }
+            addStudentToCollections(s);
+            return true;
+        }
+
+        boolean deleteByName(String name) {
+            Iterator<Student> it = students.iterator();
+            boolean removed = false;
+            while (it.hasNext()) {
+                Student s = it.next();
+                if (s.name.equalsIgnoreCase(name)) {
+                    it.remove();
+                    map.remove(s.rollNo);
+                    removed = true;
+                }
+            }
+            return removed;
+        }
+
+        List<Student> searchByName(String name) {
+            List<Student> res = new ArrayList<>();
+            for (Student s : students) {
+                if (s.name.toLowerCase().contains(name.toLowerCase())) res.add(s);
+            }
+            return res;
+        }
+
+        // Display using iterator
+        void displayAll() {
+            if (students.isEmpty()) {
+                System.out.println("No student records available.\n");
+                return;
+            }
+            Iterator<Student> it = students.iterator();
+            while (it.hasNext()) {
+                Student s = it.next();
+                s.display();
+            }
+        }
+
+        // Sort by marks descending (highest first)
+        void sortByMarksDescending() {
+            students.sort(Comparator.comparingDouble((Student s) -> s.marks).reversed());
+        }
+
+        // Sort by name ascending
+        void sortByName() {
+            students.sort(Comparator.comparing(s -> s.name.toLowerCase()));
+        }
+    }
+
+    /* ---------- Main / UI ---------- */
+    public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
+
+        // Load students from file
+        List<Student> loaded = FileUtil.loadStudents(DATA_FILE);
+        StudentManager mgr = new StudentManager(loaded);
+
+        System.out.println("Loaded " + loaded.size() + " students from file.");
+        FileUtil.showFileAttributes(DATA_FILE);
+
+        boolean running = true;
+        while (running) {
+            System.out.println("===== Capstone Student Menu =====");
+            System.out.println("1. Add Student");
+            System.out.println("2. View All Students");
+            System.out.println("3. Search by Name");
+            System.out.println("4. Delete by Name");
+            System.out.println("5. Sort by Marks (desc)");
+            System.out.println("6. Sort by Name (asc)");
+            System.out.println("7. RandomAccessFile demo (read nth line)");
+            System.out.println("8. Save and Exit");
+            System.out.print("Enter choice: ");
+
+            String choice = sc.nextLine().trim();
+            switch (choice) {
+                case "1" -> {
+                    try {
+                        System.out.print("Enter Roll No: ");
+                        int roll = Integer.parseInt(sc.nextLine().trim());
+                        System.out.print("Enter Name: ");
+                        String name = sc.nextLine().trim();
+                        System.out.print("Enter Email: ");
+                        String email = sc.nextLine().trim();
+                        System.out.print("Enter Course: ");
+                        String course = sc.nextLine().trim();
+                        System.out.print("Enter Marks: ");
+                        double marks = Double.parseDouble(sc.nextLine().trim());
+
+                        Student s = new Student(roll, name, email, course, marks);
+                        if (mgr.addStudent(s)) System.out.println("Student added.\n");
+                        else System.out.println("Duplicate roll number. Student not added.\n");
+                    } catch (NumberFormatException nfe) {
+                        System.out.println("Invalid numeric input. Try again.\n");
+                    }
+                }
+
+                case "2" -> mgr.displayAll();
+
+                case "3" -> {
+                    System.out.print("Enter name to search: ");
+                    String name = sc.nextLine().trim();
+                    List<Student> res = mgr.searchByName(name);
+                    if (res.isEmpty()) System.out.println("No matches found.\n");
+                    else {
+                        System.out.println("Search results:");
+                        for (Student s : res) s.display();
+                    }
+                }
+
+                case "4" -> {
+                    System.out.print("Enter exact name to delete: ");
+                    String name = sc.nextLine().trim();
+                    if (mgr.deleteByName(name)) System.out.println("Deleted matching records.\n");
+                    else System.out.println("No matching records.\n");
+                }
+
+                case "5" -> {
+                    mgr.sortByMarksDescending();
+                    System.out.println("Sorted by marks (desc). Use 'View All Students' to see list.\n");
+                }
+
+                case "6" -> {
+                    mgr.sortByName();
+                    System.out.println("Sorted by name (asc). Use 'View All Students' to see list.\n");
+                }
+
+                case "7" -> {
+                    // RandomAccessFile demo: ask for line number
+                    System.out.print("Enter zero-based line number to read: ");
+                    try {
+                        int ln = Integer.parseInt(sc.nextLine().trim());
+                        long pos = FileUtil.offsetOfLine(DATA_FILE, ln);
+                        if (pos == -1) {
+                            System.out.println("Line not found or file missing.\n");
+                        } else {
+                            String line = FileUtil.readLineAtPosition(DATA_FILE, pos);
+                            System.out.println("Line read via RandomAccessFile:");
+                            System.out.println(line + "\n");
+                        }
+                    } catch (NumberFormatException e) {
+                        System.out.println("Invalid number.\n");
+                    }
+                }
+
+                case "8" -> {
+                    // Save and exit
+                    FileUtil.saveStudents(DATA_FILE, mgr.students);
+                    FileUtil.showFileAttributes(DATA_FILE);
+                    System.out.println("Saved " + mgr.students.size() + " students to file. Exiting.");
+                    running = false;
+                }
+
+                default -> System.out.println("Invalid choice. Try again.\n");
+            }
+        }
+
+        sc.close();
+    }
+}
